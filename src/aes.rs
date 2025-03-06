@@ -1,6 +1,6 @@
-fn rot_word(x: &mut [u8]) {
-    x.rotate_left(1);
-}
+use std::fmt::Display;
+
+use crate::util::read_hex;
 
 static SUB_TABLE: [u8; 256] = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -21,12 +21,6 @@ static SUB_TABLE: [u8; 256] = [
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
 ];
 
-fn sub_word(xs: &mut [u8]) {
-    for x in xs {
-        *x = SUB_TABLE[*x as usize];
-    }
-}
-
 static RCON_TABLE: [u8; 256] = [
     0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a,
     0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39,
@@ -45,10 +39,6 @@ static RCON_TABLE: [u8; 256] = [
     0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd,
     0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d,
 ];
-
-fn rcon(x: u8) -> [u8; 4] {
-    [RCON_TABLE[x as usize], 0x00, 0x00, 0x00]
-}
 
 // Compute the rcon function using math
 // The current implementation iteratively multiplies by x and then takes modulos as necessary.
@@ -73,45 +63,251 @@ fn rcon_math(x: u8) -> u8 {
     p
 }
 
-// compute 4 new bytes for a key
-fn key_expansion(keys: &mut Vec<u8>, round: u8) {
-    keys.extend_from_within(keys.len() - 4..);
+#[derive(Debug, PartialEq, Eq)]
+struct AESKey {
+    bytes: [u8; 16],
+    round: u8,
+}
 
-    let l = keys.len();
-
-    let (key_data, new_key) = keys.split_at_mut(l - 4);
-    let k = key_data.len();
-
-    rot_word(new_key);
-    sub_word(new_key);
-
-    for i in 0..4 {
-        new_key[i] ^= key_data[k - 16 + i];
+impl AESKey {
+    #[inline]
+    fn rot_word(x: &mut [u8]) {
+        x.rotate_left(1);
     }
 
-    let rcon = rcon(round);
+    #[inline]
+    fn sub_word(xs: &mut [u8]) {
+        for x in xs {
+            *x = SUB_TABLE[*x as usize];
+        }
+    }
 
-    for i in 0..4 {
-        new_key[i] ^= rcon[i];
+    #[inline]
+    fn rcon(x: u8) -> [u8; 4] {
+        [RCON_TABLE[x as usize], 0x00, 0x00, 0x00]
+    }
+
+    pub fn from_hex(s: &str) -> Self {
+        AESKey {
+            bytes: read_hex(s).unwrap().try_into().unwrap(),
+            round: 0,
+        }
+    }
+
+    pub fn next_round_key(&self) -> Self {
+        // get the last four bytes
+        let mut bytes: [u8; 16] = [0; 16];
+        bytes[0..4].clone_from_slice(&self.bytes[12..]);
+
+        Self::rot_word(&mut bytes[0..4]);
+        Self::sub_word(&mut bytes[0..4]);
+
+        for i in 0..4 {
+            bytes[i] ^= self.bytes[i];
+        }
+
+        let rcon = Self::rcon(self.round + 1);
+
+        for i in 0..4 {
+            bytes[i] ^= rcon[i];
+        }
+
+        for i in 4..16 {
+            bytes[i] = bytes[i - 4] ^ self.bytes[i]
+        }
+
+        AESKey {
+            bytes,
+            round: self.round + 1,
+        }
+    }
+
+    // TODO: put all the key expansion logic in here
+}
+
+static MUL_2_TABLE: [u8; 256] = [
+    0x00, 0x02, 0x04, 0x06, 0x08, 0x0a, 0x0c, 0x0e, 0x10, 0x12, 0x14, 0x16, 0x18, 0x1a, 0x1c, 0x1e,
+    0x20, 0x22, 0x24, 0x26, 0x28, 0x2a, 0x2c, 0x2e, 0x30, 0x32, 0x34, 0x36, 0x38, 0x3a, 0x3c, 0x3e,
+    0x40, 0x42, 0x44, 0x46, 0x48, 0x4a, 0x4c, 0x4e, 0x50, 0x52, 0x54, 0x56, 0x58, 0x5a, 0x5c, 0x5e,
+    0x60, 0x62, 0x64, 0x66, 0x68, 0x6a, 0x6c, 0x6e, 0x70, 0x72, 0x74, 0x76, 0x78, 0x7a, 0x7c, 0x7e,
+    0x80, 0x82, 0x84, 0x86, 0x88, 0x8a, 0x8c, 0x8e, 0x90, 0x92, 0x94, 0x96, 0x98, 0x9a, 0x9c, 0x9e,
+    0xa0, 0xa2, 0xa4, 0xa6, 0xa8, 0xaa, 0xac, 0xae, 0xb0, 0xb2, 0xb4, 0xb6, 0xb8, 0xba, 0xbc, 0xbe,
+    0xc0, 0xc2, 0xc4, 0xc6, 0xc8, 0xca, 0xcc, 0xce, 0xd0, 0xd2, 0xd4, 0xd6, 0xd8, 0xda, 0xdc, 0xde,
+    0xe0, 0xe2, 0xe4, 0xe6, 0xe8, 0xea, 0xec, 0xee, 0xf0, 0xf2, 0xf4, 0xf6, 0xf8, 0xfa, 0xfc, 0xfe,
+    0x1b, 0x19, 0x1f, 0x1d, 0x13, 0x11, 0x17, 0x15, 0x0b, 0x09, 0x0f, 0x0d, 0x03, 0x01, 0x07, 0x05,
+    0x3b, 0x39, 0x3f, 0x3d, 0x33, 0x31, 0x37, 0x35, 0x2b, 0x29, 0x2f, 0x2d, 0x23, 0x21, 0x27, 0x25,
+    0x5b, 0x59, 0x5f, 0x5d, 0x53, 0x51, 0x57, 0x55, 0x4b, 0x49, 0x4f, 0x4d, 0x43, 0x41, 0x47, 0x45,
+    0x7b, 0x79, 0x7f, 0x7d, 0x73, 0x71, 0x77, 0x75, 0x6b, 0x69, 0x6f, 0x6d, 0x63, 0x61, 0x67, 0x65,
+    0x9b, 0x99, 0x9f, 0x9d, 0x93, 0x91, 0x97, 0x95, 0x8b, 0x89, 0x8f, 0x8d, 0x83, 0x81, 0x87, 0x85,
+    0xbb, 0xb9, 0xbf, 0xbd, 0xb3, 0xb1, 0xb7, 0xb5, 0xab, 0xa9, 0xaf, 0xad, 0xa3, 0xa1, 0xa7, 0xa5,
+    0xdb, 0xd9, 0xdf, 0xdd, 0xd3, 0xd1, 0xd7, 0xd5, 0xcb, 0xc9, 0xcf, 0xcd, 0xc3, 0xc1, 0xc7, 0xc5,
+    0xfb, 0xf9, 0xff, 0xfd, 0xf3, 0xf1, 0xf7, 0xf5, 0xeb, 0xe9, 0xef, 0xed, 0xe3, 0xe1, 0xe7, 0xe5,
+];
+
+fn aes_field_mul2(x: u8) -> u8 {
+    if x < 0x80 {
+        x << 1
+    } else {
+        (x << 1) ^ 0x1b
     }
 }
 
-fn compute_round_key(keys: &mut Vec<u8>, round: u8) {
-    let l = keys.len();
-    key_expansion(keys, round);
-    for i in 0..12 {
-        keys.push(keys[l - 12 + i] ^ keys[l + i]);
+static MUL_3_TABLE: [u8; 256] = [
+    0x00, 0x03, 0x06, 0x05, 0x0c, 0x0f, 0x0a, 0x09, 0x18, 0x1b, 0x1e, 0x1d, 0x14, 0x17, 0x12, 0x11,
+    0x30, 0x33, 0x36, 0x35, 0x3c, 0x3f, 0x3a, 0x39, 0x28, 0x2b, 0x2e, 0x2d, 0x24, 0x27, 0x22, 0x21,
+    0x60, 0x63, 0x66, 0x65, 0x6c, 0x6f, 0x6a, 0x69, 0x78, 0x7b, 0x7e, 0x7d, 0x74, 0x77, 0x72, 0x71,
+    0x50, 0x53, 0x56, 0x55, 0x5c, 0x5f, 0x5a, 0x59, 0x48, 0x4b, 0x4e, 0x4d, 0x44, 0x47, 0x42, 0x41,
+    0xc0, 0xc3, 0xc6, 0xc5, 0xcc, 0xcf, 0xca, 0xc9, 0xd8, 0xdb, 0xde, 0xdd, 0xd4, 0xd7, 0xd2, 0xd1,
+    0xf0, 0xf3, 0xf6, 0xf5, 0xfc, 0xff, 0xfa, 0xf9, 0xe8, 0xeb, 0xee, 0xed, 0xe4, 0xe7, 0xe2, 0xe1,
+    0xa0, 0xa3, 0xa6, 0xa5, 0xac, 0xaf, 0xaa, 0xa9, 0xb8, 0xbb, 0xbe, 0xbd, 0xb4, 0xb7, 0xb2, 0xb1,
+    0x90, 0x93, 0x96, 0x95, 0x9c, 0x9f, 0x9a, 0x99, 0x88, 0x8b, 0x8e, 0x8d, 0x84, 0x87, 0x82, 0x81,
+    0x9b, 0x98, 0x9d, 0x9e, 0x97, 0x94, 0x91, 0x92, 0x83, 0x80, 0x85, 0x86, 0x8f, 0x8c, 0x89, 0x8a,
+    0xab, 0xa8, 0xad, 0xae, 0xa7, 0xa4, 0xa1, 0xa2, 0xb3, 0xb0, 0xb5, 0xb6, 0xbf, 0xbc, 0xb9, 0xba,
+    0xfb, 0xf8, 0xfd, 0xfe, 0xf7, 0xf4, 0xf1, 0xf2, 0xe3, 0xe0, 0xe5, 0xe6, 0xef, 0xec, 0xe9, 0xea,
+    0xcb, 0xc8, 0xcd, 0xce, 0xc7, 0xc4, 0xc1, 0xc2, 0xd3, 0xd0, 0xd5, 0xd6, 0xdf, 0xdc, 0xd9, 0xda,
+    0x5b, 0x58, 0x5d, 0x5e, 0x57, 0x54, 0x51, 0x52, 0x43, 0x40, 0x45, 0x46, 0x4f, 0x4c, 0x49, 0x4a,
+    0x6b, 0x68, 0x6d, 0x6e, 0x67, 0x64, 0x61, 0x62, 0x73, 0x70, 0x75, 0x76, 0x7f, 0x7c, 0x79, 0x7a,
+    0x3b, 0x38, 0x3d, 0x3e, 0x37, 0x34, 0x31, 0x32, 0x23, 0x20, 0x25, 0x26, 0x2f, 0x2c, 0x29, 0x2a,
+    0x0b, 0x08, 0x0d, 0x0e, 0x07, 0x04, 0x01, 0x02, 0x13, 0x10, 0x15, 0x16, 0x1f, 0x1c, 0x19, 0x1a,
+];
+
+fn aes_field_mul3(x: u8) -> u8 {
+    aes_field_mul2(x) ^ x
+}
+
+fn mix_column(a: &mut [u8]) {
+    if let [a0, a1, a2, a3, ..] = *a {
+        let b0 = MUL_2_TABLE[a0 as usize] ^ MUL_3_TABLE[a1 as usize] ^ a2 ^ a3;
+        let b1 = a0 ^ MUL_2_TABLE[a1 as usize] ^ MUL_3_TABLE[a2 as usize] ^ a3;
+        let b2 = a0 ^ a1 ^ MUL_2_TABLE[a2 as usize] ^ MUL_3_TABLE[a3 as usize];
+        let b3 = MUL_3_TABLE[a0 as usize] ^ a1 ^ a2 ^ MUL_2_TABLE[a3 as usize];
+
+        a[0] = b0;
+        a[1] = b1;
+        a[2] = b2;
+        a[3] = b3;
+    } else {
+        panic!("columns can only be mixed if they have at least 4 elements");
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AESState {
+    bytes: [u8; 16],
+}
+
+impl AESState {
+    pub fn from_slice(bytes: &[u8]) -> Self {
+        AESState {
+            bytes: bytes.try_into().unwrap(),
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        AESState {
+            bytes: s.bytes().collect::<Vec<u8>>().try_into().unwrap(),
+        }
+    }
+
+    pub fn from_hex(s: &str) -> Self {
+        AESState {
+            bytes: read_hex(s).unwrap().try_into().unwrap(),
+        }
+    }
+
+    pub fn sub_bytes(&mut self) -> &mut Self {
+        for b in &mut self.bytes {
+            *b = SUB_TABLE[*b as usize];
+        }
+
+        self
+    }
+
+    pub fn shift_rows(&mut self) -> &mut Self {
+        // rotate every row by its index
+        for i in 1..4 {
+            for _ in 0..i {
+                let a = self.bytes[i];
+
+                self.bytes[i] = self.bytes[4 + i];
+                self.bytes[4 + i] = self.bytes[8 + i];
+                self.bytes[8 + i] = self.bytes[12 + i];
+                self.bytes[12 + i] = a;
+            }
+        }
+
+        self
+    }
+
+    pub fn mix_columns(&mut self) -> &mut Self {
+        for i in 0..4 {
+            mix_column(&mut self.bytes[4 * i..4 * i + 4]);
+        }
+
+        self
+    }
+
+    pub fn unmix_columns(&mut self) -> &mut Self {
+        todo!()
+    }
+
+    pub fn add_round_key(&mut self, key: &AESKey) -> &mut Self {
+        for i in 0..16 {
+            self.bytes[i] ^= key.bytes[i];
+        }
+
+        self
+    }
+}
+
+impl Display for AESState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let bytes = &self.bytes;
+        for i in 0..4 {
+            writeln!(
+                f,
+                "{:02x} {:02x} {:02x} {:02x}",
+                bytes[i],
+                bytes[4 + i],
+                bytes[8 + i],
+                bytes[12 + i]
+            )
+            .expect("can write to formatter");
+        }
+        Ok(())
+    }
+}
+
+fn encrypt(text: &[u8], key: &AESKey, rounds: u8) -> Vec<u8> {
+    let mut state = AESState::from_slice(&text[0..16]);
+    state.add_round_key(key);
+
+    for _ in 0..rounds - 1 {
+        let round_key = key;
+
+        state
+            .sub_bytes()
+            .shift_rows()
+            .mix_columns()
+            .add_round_key(round_key);
+    }
+
+    state.sub_bytes().shift_rows().add_round_key(key);
+
+    state.bytes.to_vec()
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        aes::{rcon_math, rot_word, sub_word, RCON_TABLE},
-        util::read_hex,
+        aes::{
+            aes_field_mul2, aes_field_mul3, rcon_math, rot_word, sub_word, AESKey, MUL_2_TABLE,
+            MUL_3_TABLE, RCON_TABLE,
+        },
+        util::{read_hex, write_hex},
     };
 
-    use super::compute_round_key;
+    use super::{compute_round_key, AESState};
 
     #[test]
     fn can_rotate() {
@@ -184,5 +380,92 @@ mod tests {
         println!("{:x?}", keys);
 
         assert!(true);
+    }
+
+    #[test]
+    fn can_create_state() {
+        let state = AESState::from_str("this is one text");
+
+        assert_eq!(
+            format!("{state}"),
+            "74 20 6f 74
+68 69 6e 65
+69 73 65 78
+73 20 20 74
+"
+        );
+    }
+
+    #[test]
+    fn aes_key_can_create_next() {
+        let mut key = AESKey::from_hex("2b7e151628aed2a6abf7158809cf4f3c");
+
+        for _ in 0..10 {
+            key = key.next_round_key();
+
+            println!("{:02x?}", key);
+        }
+
+        assert!(false);
+    }
+
+    #[test]
+    fn aes_state_can_sub_bytes() {
+        let mut state = AESState::from_hex("000102030405060708090a0b0c0d0e0f");
+
+        state.sub_bytes();
+
+        assert_eq!(write_hex(&state.bytes), "637c777bf26b6fc53001672bfed7ab76");
+    }
+
+    #[test]
+    fn aes_state_can_shift_rows() {
+        let mut state = AESState::from_hex("000102030405060708090a0b0c0d0e0f");
+
+        state.sub_bytes().shift_rows();
+
+        println!("{state}");
+
+        assert_eq!(write_hex(&state.bytes), "636b6776f201ab7b30d777c5fe7c6f2b");
+    }
+
+    #[test]
+    fn aes_state_can_mix_columns() {
+        let mut state = AESState::from_hex("000102030405060708090a0b0c0d0e0f");
+
+        state.sub_bytes().shift_rows().mix_columns();
+
+        println!("{state}");
+
+        assert_eq!(write_hex(&state.bytes), "6a6a5c452c6d3351b0d95d61279c215c");
+    }
+
+    #[test]
+    fn aes_state_can_add_round_key() {
+        let mut state = AESState::from_hex("000102030405060708090a0b0c0d0e0f");
+
+        state
+            .sub_bytes()
+            .shift_rows()
+            .mix_columns()
+            .add_round_key(&AESKey::from_hex("d6aa74fdd2af72fadaa678f1d6ab76fe"));
+
+        println!("{state}");
+
+        assert_eq!(write_hex(&state.bytes), "bcc028b8fec241ab6a7f2590f13757a2");
+    }
+
+    #[test]
+    fn can_multiply_by_two() {
+        for x in 0u8..=255 {
+            assert_eq!(aes_field_mul2(x), MUL_2_TABLE[x as usize]);
+        }
+    }
+
+    #[test]
+    fn can_multiply_by_three() {
+        for x in 0u8..=255 {
+            assert_eq!(aes_field_mul3(x), MUL_3_TABLE[x as usize]);
+        }
     }
 }
