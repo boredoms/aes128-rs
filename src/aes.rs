@@ -106,7 +106,10 @@ fn compute_round_key(keys: &mut Vec<u8>, round: u8) {
 
 #[cfg(test)]
 mod tests {
-    use crate::aes::{rcon_math, rot_word, sub_word, RCON_TABLE};
+    use crate::{
+        aes::{rcon_math, rot_word, sub_word, RCON_TABLE},
+        util::read_hex,
+    };
 
     use super::compute_round_key;
 
@@ -172,9 +175,7 @@ mod tests {
 
     #[test]
     fn can_expand_key() {
-        let mut keys = 0x2b7e151628aed2a6abf7158809cf4f3cu128
-            .to_be_bytes()
-            .to_vec();
+        let mut keys = read_hex("2b7e151628aed2a6abf7158809cf4f3c").unwrap();
 
         for i in 1..11 {
             compute_round_key(&mut keys, i);
