@@ -63,7 +63,7 @@ fn rcon_math(x: u8) -> u8 {
     p
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 struct AESKey {
     bytes: [u8; 16],
     round: u8,
@@ -278,88 +278,44 @@ impl Display for AESState {
     }
 }
 
-fn encrypt(text: &[u8], key: &AESKey, rounds: u8) -> Vec<u8> {
+fn encrypt(text: &[u8], mut key: AESKey, rounds: u8) -> AESState {
     let mut state = AESState::from_slice(&text[0..16]);
-    state.add_round_key(key);
+    println!("{}", state);
+
+    state.add_round_key(&key);
+
+    println!("{}", state);
 
     for _ in 0..rounds - 1 {
-        let round_key = key;
+        key = key.next_round_key();
 
         state
             .sub_bytes()
             .shift_rows()
             .mix_columns()
-            .add_round_key(round_key);
+            .add_round_key(&key);
+
+        println!("{}", state);
     }
 
-    state.sub_bytes().shift_rows().add_round_key(key);
+    key = key.next_round_key();
 
-    state.bytes.to_vec()
+    state.sub_bytes().shift_rows().add_round_key(&key);
+    println!("{}", state);
+
+    state
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
         aes::{
-            aes_field_mul2, aes_field_mul3, rcon_math, rot_word, sub_word, AESKey, MUL_2_TABLE,
-            MUL_3_TABLE, RCON_TABLE,
+            aes_field_mul2, aes_field_mul3, rcon_math, AESKey, MUL_2_TABLE, MUL_3_TABLE, RCON_TABLE,
         },
         util::{read_hex, write_hex},
     };
 
-    use super::{compute_round_key, AESState};
-
-    #[test]
-    fn can_rotate() {
-        let mut xs = [
-            0x0u32.to_be_bytes(),
-            0x1u32.to_be_bytes(),
-            0xffu32.to_be_bytes(),
-            0xffff0000u32.to_be_bytes(),
-            0xabcdef89u32.to_be_bytes(),
-            0x1b4a89cdu32.to_be_bytes(),
-            0x9CB62B90u32.to_be_bytes(),
-            0x5F2549B8u32.to_be_bytes(),
-        ];
-        let ys = [
-            0x0u32.to_be_bytes(),
-            0x00000100u32.to_be_bytes(),
-            0x0000ff00u32.to_be_bytes(),
-            0x00ffff00u32.to_be_bytes(),
-            0x89abcdefu32.to_be_bytes(),
-            0xcd1b4a89u32.to_be_bytes(),
-            0x909cb62bu32.to_be_bytes(),
-            0xb85f2549u32.to_be_bytes(),
-        ];
-
-        for x in &mut xs {
-            rot_word(x);
-        }
-
-        assert_eq!(xs, ys);
-    }
-
-    #[test]
-    fn can_subword() {
-        let mut xs = [
-            0x0u32.to_be_bytes(),
-            0x1u32.to_be_bytes(),
-            0xffffffffu32.to_be_bytes(),
-            0xabcdef89u32.to_be_bytes(),
-        ];
-        let ys = [
-            0x63636363u32.to_be_bytes(),
-            0x6363637cu32.to_be_bytes(),
-            0x16161616u32.to_be_bytes(),
-            0x62bddfa7u32.to_be_bytes(),
-        ];
-
-        for x in &mut xs {
-            sub_word(x);
-        }
-
-        assert_eq!(xs, ys);
-    }
+    use super::{encrypt, AESState};
 
     #[test]
     fn can_compute_rcon() {
@@ -367,33 +323,6 @@ mod tests {
             println!("{i}: {:x} == {:x}", rcon_math(i), RCON_TABLE[i as usize]);
             assert_eq!(rcon_math(i), RCON_TABLE[i as usize]);
         }
-    }
-
-    #[test]
-    fn can_expand_key() {
-        let mut keys = read_hex("2b7e151628aed2a6abf7158809cf4f3c").unwrap();
-
-        for i in 1..11 {
-            compute_round_key(&mut keys, i);
-        }
-
-        println!("{:x?}", keys);
-
-        assert!(true);
-    }
-
-    #[test]
-    fn can_create_state() {
-        let state = AESState::from_str("this is one text");
-
-        assert_eq!(
-            format!("{state}"),
-            "74 20 6f 74
-68 69 6e 65
-69 73 65 78
-73 20 20 74
-"
-        );
     }
 
     #[test]
@@ -406,7 +335,21 @@ mod tests {
             println!("{:02x?}", key);
         }
 
-        assert!(false);
+        assert_eq!(write_hex(&key.bytes), "d014f9a8c9ee2589e13f0cc8b6630ca6");
+    }
+
+    #[test]
+    fn aes_state_can_create() {
+        let state = AESState::from_str("this is one text");
+
+        assert_eq!(
+            format!("{state}"),
+            "74 20 6f 74
+68 69 6e 65
+69 73 65 78
+73 20 20 74
+"
+        );
     }
 
     #[test]
@@ -453,6 +396,22 @@ mod tests {
         println!("{state}");
 
         assert_eq!(write_hex(&state.bytes), "bcc028b8fec241ab6a7f2590f13757a2");
+    }
+
+    #[test]
+    fn can_encrypt() {
+        let plaintext = "theblockbreakers".bytes().collect::<Vec<u8>>();
+        let key = AESKey::from_hex("2b7e151628aed2a6abf7158809cf4f3c");
+        let cyphertext = encrypt(&plaintext, key, 10);
+
+        assert_eq!(
+            format!("{}", cyphertext),
+            "c6 02 23 2f
+9f 5a 93 05
+25 9e f6 b7
+d0 f3 3e 47
+"
+        );
     }
 
     #[test]
