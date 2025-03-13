@@ -83,7 +83,7 @@ fn rcon_math(x: u8) -> u8 {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct AESKey {
+pub struct AESKey {
     bytes: [u8; 16],
     round: u8,
 }
@@ -315,7 +315,7 @@ fn unmix_column(a: &mut [u8]) {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct AESState {
+pub struct AESState {
     bytes: [u8; 16],
 }
 
@@ -428,7 +428,7 @@ impl Display for AESState {
     }
 }
 
-fn encrypt(plaintext: &AESState, mut key: AESKey, rounds: u8) -> AESState {
+pub fn encrypt(plaintext: &AESState, mut key: AESKey, rounds: u8) -> AESState {
     let mut state = *plaintext;
 
     state.add_round_key(&key);
@@ -455,8 +455,8 @@ fn AES128_encrypt(text: &[u8], key: &[u8]) -> Vec<u8> {
     todo!()
 }
 
-fn decrypt(cyphertext: &AESState, key: &AESKey, rounds: u8) -> AESState {
-    let mut state = *cyphertext;
+pub fn decrypt(ciphertext: &AESState, key: &AESKey, rounds: u8) -> AESState {
+    let mut state = *ciphertext;
     // first compute the round keys
     let mut keys = Vec::with_capacity((rounds + 1) as usize);
 
@@ -580,10 +580,10 @@ mod tests {
     fn can_encrypt() {
         let plaintext = AESState::from_str("theblockbreakers");
         let key = AESKey::from_hex("2b7e151628aed2a6abf7158809cf4f3c");
-        let cyphertext = encrypt(&plaintext, key, 10);
+        let ciphertext = encrypt(&plaintext, key, 10);
 
         assert_eq!(
-            format!("{}", cyphertext),
+            format!("{}", ciphertext),
             "c6 02 23 2f
 9f 5a 93 05
 25 9e f6 b7
@@ -596,8 +596,8 @@ d0 f3 3e 47
     fn can_decrypt() {
         let plaintext = AESState::from_str("theblockbreakers");
         let key = AESKey::from_hex("2b7e151628aed2a6abf7158809cf4f3c");
-        let cyphertext = encrypt(&plaintext, key, 10);
-        let decrypted = decrypt(&cyphertext, &key, 10);
+        let ciphertext = encrypt(&plaintext, key, 10);
+        let decrypted = decrypt(&ciphertext, &key, 10);
 
         assert_eq!(plaintext, decrypted);
     }

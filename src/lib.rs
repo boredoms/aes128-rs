@@ -1,2 +1,2 @@
-mod aes;
-mod util;
+pub mod aes;
+pub mod util;
