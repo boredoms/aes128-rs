@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Index};
 
 use crate::util::read_hex;
 
@@ -319,6 +319,14 @@ pub struct AESState {
     bytes: [u8; 16],
 }
 
+impl Index<usize> for AESState {
+    type Output = u8;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.bytes[index]
+    }
+}
+
 impl AESState {
     pub fn from_slice(bytes: &[u8]) -> Self {
         AESState {
@@ -428,24 +436,36 @@ impl Display for AESState {
     }
 }
 
+// pre whiten the given aes state
+pub fn pre_whiten(state: &mut AESState, key: &AESKey) {
+    state.add_round_key(key);
+}
+
+// run one round of full encryption
+pub fn aes_one_round(state: &mut AESState, key: &AESKey) {
+    state
+        .sub_bytes()
+        .shift_rows()
+        .mix_columns()
+        .add_round_key(key);
+}
+
+pub fn aes_finalize(state: &mut AESState, key: &AESKey) {
+    state.sub_bytes().shift_rows().add_round_key(&key);
+}
+
 pub fn encrypt(plaintext: &AESState, mut key: AESKey, rounds: u8) -> AESState {
     let mut state = *plaintext;
 
-    state.add_round_key(&key);
+    pre_whiten(&mut state, &key);
 
     for _ in 0..rounds - 1 {
         key = key.next_round_key();
-
-        state
-            .sub_bytes()
-            .shift_rows()
-            .mix_columns()
-            .add_round_key(&key);
+        aes_one_round(&mut state, &key);
     }
 
     key = key.next_round_key();
-
-    state.sub_bytes().shift_rows().add_round_key(&key);
+    aes_finalize(&mut state, &key);
 
     state
 }
