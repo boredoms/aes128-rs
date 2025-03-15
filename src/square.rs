@@ -1,13 +1,11 @@
 // this file contains an implementation of the square attack on block ciphers
 
 use crate::{
-    aes::{self, AESState},
+    aes::{self, aes_finalize, aes_one_round, encrypt, pre_whiten, AESKey, AESState, UNSUB_TABLE},
     util::read_hex,
 };
 
-// TODO: create aes that lets me access only the inner rounds, not the last step
-
-fn create_delta_set() -> Vec<AESState> {
+pub fn create_delta_set() -> Vec<AESState> {
     let mut delta_set = Vec::new();
     let random_byte = rand::random::<u8>();
     let mut plaintext: [u8; 16] = [random_byte; 16];
@@ -21,7 +19,17 @@ fn create_delta_set() -> Vec<AESState> {
     delta_set
 }
 
-fn is_delta_set(set: &Vec<AESState>, idx: usize) -> bool {
+pub fn setup(key: &AESKey) -> Vec<AESState> {
+    let mut delta_set = create_delta_set();
+
+    delta_set
+        .iter_mut()
+        .for_each(|state| *state = encrypt(state, *key, 4));
+
+    delta_set
+}
+
+pub fn is_delta_set(set: &Vec<AESState>, idx: usize) -> bool {
     if set.len() != 256 {
         return false;
     }
@@ -41,11 +49,65 @@ fn is_delta_set(set: &Vec<AESState>, idx: usize) -> bool {
     true
 }
 
+fn reverse_byte(b: u8, guess: u8) -> u8 {
+    UNSUB_TABLE[(b ^ guess) as usize]
+}
+
+fn reduce_reverse(delta_set: &[AESState], guess: u8, pos: usize) -> u8 {
+    delta_set
+        .iter()
+        .fold(0, |acc, e| reverse_byte(e[pos], guess) ^ acc)
+}
+
+fn check_key_guess(delta_set: &[AESState], guess: u8, pos: usize) -> bool {
+    reduce_reverse(delta_set, guess, pos) == 0
+}
+
+pub fn generate_candidates(delta_set: &[AESState], pos: usize) -> Vec<u8> {
+    let mut candidates = Vec::with_capacity(256);
+
+    for b in 0..=255 {
+        if check_key_guess(delta_set, b, pos) {
+            candidates.push(b);
+        }
+    }
+
+    candidates
+}
+
+pub fn guess_key(key: &AESKey) -> AESKey {
+    let mut delta_set = setup(key);
+
+    let mut key_guess = AESKey::new();
+
+    for pos in 0..16 {
+        let mut candidates = generate_candidates(&delta_set, pos);
+        let mut buffer = Vec::new();
+
+        while candidates.len() > 1 {
+            delta_set = setup(key);
+
+            // check if candidate is valid with new delta set
+            for c in &candidates {
+                if check_key_guess(&delta_set, *c, pos) {
+                    buffer.push(*c);
+                }
+            }
+
+            std::mem::swap(&mut candidates, &mut buffer);
+        }
+
+        key_guess[pos] = candidates[0];
+    }
+
+    key_guess
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
-        aes::{aes_one_round, encrypt, pre_whiten, AESKey},
-        square::is_delta_set,
+        aes::{aes_finalize, aes_one_round, encrypt, pre_whiten, AESKey},
+        square::{check_key_guess, generate_candidates, guess_key, is_delta_set, setup},
     };
 
     use super::create_delta_set;
@@ -114,5 +176,25 @@ mod test {
         }
 
         assert!(res.iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn can_guess_first_candidate_four_rounds() {
+        // perform four round aes
+        let key = AESKey::from_hex("2b7e151628aed2a6abf7158809cf4f3c");
+
+        println!(
+            "{:?}",
+            key.next_round_key()
+                .next_round_key()
+                .next_round_key()
+                .next_round_key()
+        );
+
+        let guess = guess_key(&key);
+
+        println!("{:?}", guess);
+
+        assert!(false);
     }
 }
