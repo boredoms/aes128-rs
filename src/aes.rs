@@ -1,6 +1,7 @@
 use std::{
     fmt::Display,
     ops::{Index, IndexMut},
+    str::FromStr,
 };
 
 use crate::util::read_hex;
@@ -85,7 +86,25 @@ fn rcon_math(x: u8) -> u8 {
     p
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Default)]
+pub struct AESIV {
+    bytes: [u8; 16],
+}
+
+impl FromStr for AESIV {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = read_hex(s)
+            .map_err(|_| "could not parse bytes")?
+            .try_into()
+            .map_err(|_| "keys must have 16 bytes")?;
+
+        Ok(Self { bytes })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub struct AESKey {
     bytes: [u8; 16],
     pub round: u8,
@@ -187,6 +206,19 @@ impl Index<usize> for AESKey {
 
     fn index(&self, index: usize) -> &Self::Output {
         self.bytes.index(index)
+    }
+}
+
+impl FromStr for AESKey {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = read_hex(s)
+            .map_err(|_| "could not parse bytes")?
+            .try_into()
+            .map_err(|_| "keys must have 16 bytes")?;
+
+        Ok(Self { bytes, round: 0 })
     }
 }
 
@@ -366,7 +398,7 @@ fn unmix_column(a: &mut [u8]) {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub struct AESState {
     bytes: [u8; 16],
 }
@@ -376,6 +408,19 @@ impl Index<usize> for AESState {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.bytes[index]
+    }
+}
+
+impl FromStr for AESState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = read_hex(s)
+            .map_err(|_| "could not parse bytes")?
+            .try_into()
+            .map_err(|_| "states must have 16 bytes")?;
+
+        Ok(AESState { bytes })
     }
 }
 
