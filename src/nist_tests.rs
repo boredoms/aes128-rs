@@ -3,7 +3,7 @@ use std::str::FromStr;
 use crate::aes::{AESKey, AESState, AESIV};
 
 #[derive(Debug)]
-pub struct NISTVector {
+pub struct NISTTest {
     count: u32,
     key: AESKey,
     iv: AESIV,
@@ -11,7 +11,7 @@ pub struct NISTVector {
     ciphertext: AESState,
 }
 
-impl NISTVector {
+impl NISTTest {
     fn parse_line<'a, T: FromStr>(s: &'a str) -> Result<(&'a str, T), String> {
         s.split_once("=")
             .map(|(keyword, value)| {
@@ -30,7 +30,7 @@ impl NISTVector {
     }
 }
 
-impl FromStr for NISTVector {
+impl FromStr for NISTTest {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -75,7 +75,7 @@ impl FromStr for NISTVector {
             return Err(format!("expected keyword CIPHERTEXT got {}", kw));
         }
 
-        Ok(NISTVector {
+        Ok(NISTTest {
             count,
             key,
             iv,
@@ -86,17 +86,17 @@ impl FromStr for NISTVector {
 }
 
 pub struct NISTTestFile {
-    tests: Vec<NISTVector>,
+    tests: Vec<NISTTest>,
 }
 
 #[cfg(test)]
 mod test {
-    use super::NISTVector;
+    use super::NISTTest;
 
     #[test]
     fn can_parse_line() {
         let l =
-            NISTVector::parse_line::<u32>("COUNT = 1").expect("Should be able to parse this line!");
+            NISTTest::parse_line::<u32>("COUNT = 1").expect("Should be able to parse this line!");
 
         assert_eq!(l.1, 1);
     }
@@ -108,7 +108,7 @@ KEY = 00000000000000000000000000000000
 IV = 00000000000000000000000000000000
 PLAINTEXT = 00000000000000000000000000000000
 CIPHERTEXT = 00000000000000000000000000000000"
-            .parse::<NISTVector>()
+            .parse::<NISTTest>()
             .expect("valid test spec must be parsed");
 
         assert_eq!(t.count, 0);
@@ -121,7 +121,7 @@ KEY = 00
 IV = 00000000000000000000000000000000
 PLAINTEXT = 00000000000000000000000000000000
 CIPHERTEXT = 00000000000000000000000000000000"
-            .parse::<NISTVector>();
+            .parse::<NISTTest>();
 
         assert_eq!(
             t.err(),

@@ -1,7 +1,8 @@
 // this file contains an implementation of the square attack on block ciphers
 
 use crate::{
-    aes::{self, aes_finalize, aes_one_round, encrypt, pre_whiten, AESKey, AESState, UNSUB_TABLE},
+    aes::{self, aes_finalize, aes_one_round, encrypt, pre_whiten, AESKey, AESState},
+    aes_lookup_table::UNSUB_TABLE,
     util::read_hex,
 };
 
