@@ -88,7 +88,7 @@ fn rcon_math(x: u8) -> u8 {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct AESKey {
     bytes: [u8; 16],
-    round: u8,
+    pub round: u8,
 }
 
 impl AESKey {
@@ -123,6 +123,10 @@ impl AESKey {
         }
     }
 
+    pub fn set_round(&mut self, r: u8) {
+        self.round = r;
+    }
+
     pub fn next_round_key(&self) -> Self {
         // get the last four bytes
         let mut bytes: [u8; 16] = [0; 16];
@@ -151,8 +155,30 @@ impl AESKey {
         }
     }
 
-    pub fn prev_round_key() -> Self {
-        todo!()
+    pub fn prev_round_key(&self) -> Self {
+        let mut bytes = [0; 16];
+
+        for i in (4..16).rev() {
+            bytes[i] = self.bytes[i] ^ self.bytes[i - 4];
+        }
+
+        for i in 0..4 {
+            bytes[i] = bytes[i + 12];
+        }
+
+        Self::rot_word(&mut bytes[0..4]);
+        Self::sub_word(&mut bytes[0..4]);
+
+        let rcon = Self::rcon(self.round);
+
+        for i in 0..4 {
+            bytes[i] ^= rcon[i] ^ self.bytes[i];
+        }
+
+        AESKey {
+            bytes,
+            round: self.round - 1,
+        }
     }
 }
 
@@ -560,6 +586,14 @@ mod tests {
         }
 
         assert_eq!(write_hex(&key.bytes), "d014f9a8c9ee2589e13f0cc8b6630ca6");
+    }
+
+    #[test]
+    fn aes_key_can_reverse() {
+        let key = AESKey::from_hex("2b7e151628aed2a6abf7158809cf4f3c");
+        let reverse = key.next_round_key().prev_round_key();
+
+        assert_eq!(write_hex(&key.bytes), write_hex(&reverse.bytes));
     }
 
     #[test]

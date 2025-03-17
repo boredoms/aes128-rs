@@ -100,6 +100,13 @@ pub fn guess_key(key: &AESKey) -> AESKey {
         key_guess[pos] = candidates[0];
     }
 
+    // reverse the aes key expansion to get the original key
+    key_guess.round = 4;
+
+    while key_guess.round > 0 {
+        key_guess = key_guess.prev_round_key();
+    }
+
     key_guess
 }
 
@@ -107,7 +114,7 @@ pub fn guess_key(key: &AESKey) -> AESKey {
 mod test {
     use crate::{
         aes::{aes_finalize, aes_one_round, encrypt, pre_whiten, AESKey},
-        square::{check_key_guess, generate_candidates, guess_key, is_delta_set, setup},
+        integral_analysis::{check_key_guess, generate_candidates, guess_key, is_delta_set, setup},
     };
 
     use super::create_delta_set;
@@ -195,6 +202,6 @@ mod test {
 
         println!("{:?}", guess);
 
-        assert!(false);
+        assert_eq!(key, guess);
     }
 }
